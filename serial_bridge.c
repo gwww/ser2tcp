@@ -3,13 +3,16 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <uv.h>
 
-void on_read(uv_fs_t *req);
+#include "tcp_bridge.h"
+#include "util.h"
 
 uv_fs_t open_req;
 uv_fs_t read_req;
 uv_fs_t write_req;
+int SerialFileHandle;
 
 static char buffer[1024];
 static uv_buf_t iov;
@@ -18,7 +21,6 @@ static uv_buf_t iov;
 #include <fcntl.h> 
 #include <string.h>
 #include <termios.h>
-#include <unistd.h>
 
 int set_serial_attribs(int fd, int speed)
 {
@@ -54,17 +56,31 @@ int set_serial_attribs(int fd, int speed)
     return 0;
 }
 
-void on_write(uv_fs_t *req) {
-    /* printf("on_write\n"); */
+void serial_write_complete(uv_fs_t *req) {
     if (req->result < 0) {
         fprintf(stderr, "Write error: %s\n", uv_strerror((int)req->result));
         return;
     }
-    uv_fs_read(uv_default_loop(), &read_req, open_req.result, &iov, 1, -1, on_read);
+
+    free(((uv_buf_t*)req->data)->base);
+    free(req->data);
+    free(req);
+}
+
+void serial_write(char *buffer, int length) {
+    printf("serial_write\n");
+    /* uv_fs_write(uv_default_loop(), */
+    /*     &write_req, open_req.result, &iov, 1, -1, on_write); */
+    /* uv_write(req, sendto, req->data, 1, tcp_write_complete); */
+
+    uv_fs_t *req = (uv_fs_t *) malloc(sizeof(uv_fs_t));
+    req->data = (void *)create_uv_buf_with_data(buffer, length);
+    uv_fs_write(uv_default_loop(),
+        req, open_req.result, req->data, 1, -1, serial_write_complete);
 }
 
 void on_read(uv_fs_t *req) {
-    /* printf("on_read\n"); */
+    printf("serial on_read\n");
     if (req->result < 0) {
         fprintf(stderr, "Read error: %s\n", uv_strerror(req->result));
         return;
@@ -77,23 +93,15 @@ void on_read(uv_fs_t *req) {
         return;
     }
 
-    int i;
-    for (i=0; i < req->result; i++) {
-      if (iscntrl(buffer[i])) {
-          buffer[i] = '\n';
-      }
-    }
+    tcp_write(buffer, req->result);
 
-    /* printf("read len=%zd, data=%s", req->result, buff); */
-
-    iov.len = req->result;
-    uv_fs_write(uv_default_loop(), &write_req, 1, &iov, 1, -1, on_write);
+    iov.len = sizeof(buffer);
+    uv_fs_read(uv_default_loop(),
+        &read_req, open_req.result, &iov, 1, -1, on_read);
 }
 
 void on_open(uv_fs_t *req) {
     printf("on_open\n");
-    // The request passed to the callback is the same as the one the call setup
-    // function was passed.
     assert(req == &open_req);
     if (req->result < 0) {
         fprintf(stderr, "error opening file: %s\n", uv_strerror((int)req->result));
@@ -106,8 +114,10 @@ void on_open(uv_fs_t *req) {
 }
 
 void serial_bridge_init() {
-    uv_fs_open(uv_default_loop(),
+    SerialFileHandle = uv_fs_open(uv_default_loop(),
             &open_req, "/dev/cu.KeySerial1", UV_FS_O_RDWR, 0, on_open);
+    /* uv_fs_open(uv_default_loop(), */
+    /*         &open_req, "/dev/ttys004", UV_FS_O_RDWR, 0, on_open); */
 }
 
 void serial_bridge_cleanup() {

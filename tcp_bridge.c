@@ -4,31 +4,57 @@
 #include <stdlib.h>
 #include <uv.h>
 
+#include "serial_bridge.h"
+#include "util.h"
+
 struct sockaddr_in addr;
 uv_tcp_t server;
+uv_tcp_t *client = NULL;
+uv_tcp_t *priority_client = NULL;
 
-void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
-    buf->base = (char*)malloc(suggested_size);
-    buf->len = suggested_size;
+static void alloc_buffer(uv_handle_t *handle, size_t len, uv_buf_t *buf) {
+    buf->base = (char*)malloc(len);
+    buf->len = len;
 }
 
-void tcp_write_complete(uv_write_t *req, int status) {
+static void tcp_write_complete(uv_write_t *req, int status) {
     if (status) {
-        fprintf(stderr, "Write error %s\n", uv_strerror(status));
+        fprintf(stderr, "Write error: %s\n", uv_strerror(status));
+        uv_close((uv_handle_t*)req->handle, NULL);
+        client = NULL;
     }
+
+    free(((uv_buf_t*)req->data)->base);
+    free(req->data);
     free(req);
 }
 
-void tcp_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
+void tcp_write(char *buffer, int length) {
+    printf("tcp_write\n");
+    uv_stream_t* sendto;
+
+    sendto = (uv_stream_t*)(priority_client ? priority_client : client);
+
+    if (sendto == NULL)
+        return;
+
+    uv_write_t *req = (uv_write_t *) malloc(sizeof(uv_write_t));
+    req->data = (void *)create_uv_buf_with_data(buffer, length);
+    uv_write(req, sendto, req->data, 1, tcp_write_complete);
+}
+
+static void tcp_read_callback(
+        uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     if (nread < 0) {
         if (nread != UV_EOF) {
             fprintf(stderr, "Read error %s\n", uv_err_name(nread));
             uv_close((uv_handle_t*) client, NULL);
         }
     } else if (nread > 0) {
-        uv_write_t *req = (uv_write_t *) malloc(sizeof(uv_write_t));
-        uv_buf_t wrbuf = uv_buf_init(buf->base, nread);
-        uv_write(req, client, &wrbuf, 1, tcp_write_complete);
+        /* uv_write_t *req = (uv_write_t *) malloc(sizeof(uv_write_t)); */
+        /* uv_buf_t wrbuf = uv_buf_init(buf->base, nread); */
+        /* uv_write(req, client, &wrbuf, 1, tcp_write_complete); */
+        serial_write(buf->base, nread);
     }
 
     if (buf->base) {
@@ -36,16 +62,16 @@ void tcp_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     }
 }
 
-void on_new_connection(uv_stream_t *server, int status) {
+static void on_new_connection(uv_stream_t *server, int status) {
     if (status < 0) {
         fprintf(stderr, "New connection error %s\n", uv_strerror(status));
         return;
     }
 
-    uv_tcp_t *client = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
+    client = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
     uv_tcp_init(uv_default_loop(), client);
     if (uv_accept(server, (uv_stream_t*) client) == 0) {
-        uv_read_start((uv_stream_t*)client, alloc_buffer, tcp_read);
+        uv_read_start((uv_stream_t*)client, alloc_buffer, tcp_read_callback);
     } else {
         uv_close((uv_handle_t*) client, NULL);
     }
