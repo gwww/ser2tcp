@@ -70,9 +70,13 @@ static void tcp_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
         tcp_close((uv_handle_t *)client);
     } else if (nread > 0) {
         /* if (*(buf->base) == '~') exit(0); */
-        serial_write(buf->base, nread);
+        if (PriorityClientHandle) {
+            if (client == (uv_stream_t *)PriorityClientHandle)
+                serial_write(buf->base, nread);
+        } else {
+            serial_write(buf->base, nread);
+        }
     }
-
     if (buf->base) free(buf->base);
 }
 
@@ -100,7 +104,7 @@ static void on_new_connection(uv_stream_t *ServerHandle, int status) {
     char *ipv4_string = inet_ntoa(tmp_addr.sin_addr);
     printf("New connection from: %s\n", ipv4_string);
 
-    if (tmp_addr.sin_addr.s_addr != PriorityClientAddress.sin_addr.s_addr) {
+    if (tmp_addr.sin_addr.s_addr == PriorityClientAddress.sin_addr.s_addr) {
         printf("PRIORITY client\n");
         if (PriorityClientHandle != NULL) {
             tcp_close((uv_handle_t *)client);
