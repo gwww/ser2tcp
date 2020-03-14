@@ -5,6 +5,7 @@
 #include <uv.h>
 
 #include "tcp_bridge.h"
+#include "config.h"
 #include "util.h"
 
 static uv_fs_t OpenRequest;
@@ -13,6 +14,7 @@ static char ReadBuffer[1024];
 static uv_buf_t IOV;
 static int OpenRetryTime = 1;
 static uv_timer_t OpenTimerHandle;
+static char *SerialPort;
 
 static void serial_open_timeout(uv_timer_t *);
 
@@ -90,11 +92,12 @@ static void serial_open_timeout(uv_timer_t *handle) {
     /* uv_fs_open(uv_default_loop(), */
     /*         &OpenRequest, "/dev/cu.KeySerial1", UV_FS_O_RDWR, 0, serial_open_cb); */
     uv_fs_open(uv_default_loop(),
-            &OpenRequest, "/dev/ttys005", UV_FS_O_RDWR, 0, serial_open_cb);
+            &OpenRequest, SerialPort, UV_FS_O_RDWR, 0, serial_open_cb);
 }
 
-void serial_bridge_init() {
+void serial_bridge_init(struct config *config) {
     OpenRequest.result = -1;
+    SerialPort = config->serial_port;
     uv_timer_init(uv_default_loop(), &OpenTimerHandle);
     uv_timer_start(&OpenTimerHandle, serial_open_timeout, 0, 0);
 }
