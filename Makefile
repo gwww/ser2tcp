@@ -1,3 +1,5 @@
+CFLAGS = -g -O0 -Wall -Werror
+
 all: ser2tcp
 
 ser2tcp:  main.o tcp_bridge.o serial_bridge.o util.o

@@ -1,127 +1,105 @@
 #include <assert.h>
 #include <stdio.h>
-#include <ctype.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <stdlib.h>
+#include <termios.h>
 #include <uv.h>
 
 #include "tcp_bridge.h"
 #include "util.h"
 
-uv_fs_t open_req;
-uv_fs_t read_req;
-uv_fs_t write_req;
-int SerialFileHandle;
+static uv_fs_t OpenRequest;
+static uv_fs_t ReadRequest;
+static char ReadBuffer[1024];
+static uv_buf_t IOV;
+static int OpenRetryTime = 1;
+static uv_timer_t OpenTimerHandle;
 
-static char buffer[1024];
-static uv_buf_t iov;
+static void serial_open_timeout(uv_timer_t *);
 
-#include <errno.h>
-#include <fcntl.h> 
-#include <string.h>
-#include <termios.h>
+static void serial_close() {
+    uv_fs_t close_req;
 
-int set_serial_attribs(int fd, int speed)
-{
-    struct termios tty;
-    int baud;
-
-    if (tcgetattr (fd, &tty) != 0) {
-        fprintf(stderr, "error %d from tcgetattr", errno);
-        return -1;
-    }
-
-    switch (speed) {
-        case 4800:   baud = B4800;   break;
-        case 9600:   baud = B9600;   break;
-        case 19200:  baud = B19200;  break;
-        case 38400:  baud = B38400;  break;
-        case 115200: baud = B115200; break;
-        default:
-            fprintf(stderr, "warning: baud rate %u not supported, using 9600.\n",
-              speed);
-            baud = B9600;
-            break;
-    }
-
-    cfsetospeed(&tty, baud);
-    cfsetispeed(&tty, baud);
-    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;     // 8-bit chars
-
-    if (tcsetattr (fd, TCSANOW, &tty) != 0) {
-        fprintf(stderr, "error %d from tcsetattr", errno);
-        return -1;
-    }
-    return 0;
+    printf("serial_close\n");
+    uv_fs_close(uv_default_loop(), &close_req, OpenRequest.result, NULL);
+    OpenRequest.result = -1;
+    uv_timer_start(&OpenTimerHandle, serial_open_timeout, 0, 0);
 }
 
-void serial_write_complete(uv_fs_t *req) {
+static void serial_write_complete(uv_fs_t *req) {
     if (req->result < 0) {
-        fprintf(stderr, "Write error: %s\n", uv_strerror((int)req->result));
+        fprintf(stderr, "Serial write error: %s\n", uv_strerror((int)req->result));
+        serial_close();
         return;
     }
-
     free(((uv_buf_t*)req->data)->base);
     free(req->data);
     free(req);
 }
 
-void serial_write(char *buffer, int length) {
+void serial_write(char *ReadBuffer, int length) {
+    if (OpenRequest.result < 0)
+        return;
     printf("serial_write\n");
-    /* uv_fs_write(uv_default_loop(), */
-    /*     &write_req, open_req.result, &iov, 1, -1, on_write); */
-    /* uv_write(req, sendto, req->data, 1, tcp_write_complete); */
-
     uv_fs_t *req = (uv_fs_t *) malloc(sizeof(uv_fs_t));
-    req->data = (void *)create_uv_buf_with_data(buffer, length);
+    req->data = (void *)create_uv_buf_with_data(ReadBuffer, length);
     uv_fs_write(uv_default_loop(),
-        req, open_req.result, req->data, 1, -1, serial_write_complete);
+        req, OpenRequest.result, req->data, 1, -1, serial_write_complete);
 }
 
-void on_read(uv_fs_t *req) {
-    printf("serial on_read\n");
+static void serial_read_cb(uv_fs_t *req) {
+    printf("serial_read_cb\n");
     if (req->result < 0) {
         fprintf(stderr, "Read error: %s\n", uv_strerror(req->result));
         return;
-    } 
+    }
 
     if (req->result == 0) {
-        uv_fs_t close_req;
-        // synchronous
-        uv_fs_close(uv_default_loop(), &close_req, open_req.result, NULL);
+        serial_close();
         return;
     }
 
-    tcp_write(buffer, req->result);
+    tcp_write(ReadBuffer, req->result);
 
-    iov.len = sizeof(buffer);
+    IOV.len = sizeof(ReadBuffer);
     uv_fs_read(uv_default_loop(),
-        &read_req, open_req.result, &iov, 1, -1, on_read);
+        &ReadRequest, OpenRequest.result, &IOV, 1, -1, serial_read_cb);
 }
 
-void on_open(uv_fs_t *req) {
-    printf("on_open\n");
-    assert(req == &open_req);
+static void serial_open_cb(uv_fs_t *req) {
+    printf("serial_open_cb\n");
+    assert(req == &OpenRequest);
+
     if (req->result < 0) {
-        fprintf(stderr, "error opening file: %s\n", uv_strerror((int)req->result));
+        fprintf(stderr, "Error opening serial port: %s\n",
+                uv_strerror((int)req->result));
+        fprintf(stderr, "Retrying serial port open in %d seconds\n", OpenRetryTime);
+        uv_timer_start(&OpenTimerHandle, serial_open_timeout, OpenRetryTime*1000, 0);
+        if (OpenRetryTime < 60) OpenRetryTime *= 2;
         return;
     }
+    OpenRetryTime = 1;
 
     set_serial_attribs(req->result, 4800);
-    iov = uv_buf_init(buffer, sizeof(buffer));
-    uv_fs_read(uv_default_loop(), &read_req, req->result, &iov, 1, -1, on_read);
+
+    IOV = uv_buf_init(ReadBuffer, sizeof(ReadBuffer));
+    uv_fs_read(uv_default_loop(),
+        &ReadRequest, req->result, &IOV, 1, -1, serial_read_cb);
+}
+
+static void serial_open_timeout(uv_timer_t *handle) {
+    /* uv_fs_open(uv_default_loop(), */
+    /*         &OpenRequest, "/dev/cu.KeySerial1", UV_FS_O_RDWR, 0, serial_open_cb); */
+    uv_fs_open(uv_default_loop(),
+            &OpenRequest, "/dev/ttys005", UV_FS_O_RDWR, 0, serial_open_cb);
 }
 
 void serial_bridge_init() {
-    SerialFileHandle = uv_fs_open(uv_default_loop(),
-            &open_req, "/dev/cu.KeySerial1", UV_FS_O_RDWR, 0, on_open);
-    /* uv_fs_open(uv_default_loop(), */
-    /*         &open_req, "/dev/ttys004", UV_FS_O_RDWR, 0, on_open); */
+    OpenRequest.result = -1;
+    uv_timer_init(uv_default_loop(), &OpenTimerHandle);
+    uv_timer_start(&OpenTimerHandle, serial_open_timeout, 0, 0);
 }
 
 void serial_bridge_cleanup() {
-    uv_fs_req_cleanup(&open_req);
-    uv_fs_req_cleanup(&read_req);
-    uv_fs_req_cleanup(&write_req);
+    uv_fs_req_cleanup(&OpenRequest);
+    uv_fs_req_cleanup(&ReadRequest);
 }
