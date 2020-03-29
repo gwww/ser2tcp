@@ -6,36 +6,42 @@
 #include "config.h"
 #include "util.h"
 
-struct sockaddr_in addr;
-struct sockaddr_in PriorityClientAddress;
-uv_tcp_t ServerHandle;
-uv_tcp_t *RegularClientHandle = NULL;
-uv_tcp_t *PriorityClientHandle = NULL;
+static struct sockaddr_in addr;
+static struct sockaddr_in PriorityClientAddress;
+static uv_tcp_t ServerHandle;
+static uv_tcp_t *RegularClientHandle = NULL;
+static uv_tcp_t *PriorityClientHandle = NULL;
+static char* ControlCmdFmt;
 
 static void tcp_write_to_client(uv_tcp_t *client, char *buffer, int length);
 
-static void alloc_buffer(uv_handle_t *handle, size_t len, uv_buf_t *buf) {
-    buf->base = (char*)malloc(len);
-    buf->len = len;
-}
-
 static void tcp_close_cb(uv_handle_t* client) {
-    printf("tcp_close callback\n");
+    dprintf(3, "");
     free(client);
 }
 
+static void send_control_command(char* command)
+{
+    char buffer[256];
+
+    if (ControlCmdFmt == NULL)
+        return;
+    snprintf(buffer, sizeof buffer, ControlCmdFmt, command);
+    tcp_write_to_client(RegularClientHandle, buffer, strlen(buffer));
+}
+
 static void tcp_close(uv_handle_t* client) {
-    printf("tcp_close\n");
+    dprintf(3, "");
     uv_close(client, tcp_close_cb);
     if (client == (uv_handle_t *)PriorityClientHandle) {
-        printf("PRIORITY client\n");
+        dprintf(3, "PRIORITY client");
         PriorityClientHandle = NULL;
-        tcp_write_to_client(RegularClientHandle, "~~RESUME\n", 9);
+        send_control_command("RESUME");
     } else if (client == (uv_handle_t *)RegularClientHandle) {
-        printf("REGULAR client\n");
+        dprintf(3, "REGULAR client");
         RegularClientHandle = NULL;
     } else {
-        printf("UNKNOWN client\n");
+        dprintf(3, "UNKNOWN client");
     }
 }
 
@@ -55,15 +61,20 @@ static void tcp_write_to_client(uv_tcp_t *client, char *buffer, int length) {
     if (client == NULL)
         return;
 
+    if (buffer == NULL)
+        return;
+
     uv_write_t *req = (uv_write_t *) malloc(sizeof(uv_write_t));
-    req->data = (void *)create_uv_buf_with_data(buffer, length);
-    uv_write(req, (uv_stream_t *)client, req->data, 1, tcp_write_cb);
+    if (req) {
+        req->data = (void *)create_uv_buf_with_data(buffer, length);
+        uv_write(req, (uv_stream_t *)client, req->data, 1, tcp_write_cb);
+    }
 }
 
 void tcp_write(char *buffer, int length) {
     uv_stream_t* sendto;
 
-    printf("tcp_write\n");
+    dprintf(3, "");
     sendto = (uv_stream_t*)
         (PriorityClientHandle ? PriorityClientHandle : RegularClientHandle);
 
@@ -71,7 +82,7 @@ void tcp_write(char *buffer, int length) {
 }
 
 static void tcp_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
-    printf("tcp_read callback\n");
+    dprintf(3, "");
     if (nread < 0) {
         if (nread != UV_EOF)
             fprintf(stderr, "TCP read error %s\n", uv_err_name(nread));
@@ -91,7 +102,7 @@ static void tcp_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
 static void send_pause_control_command(uv_tcp_t *client) {
     if (NULL == PriorityClientHandle)
         return;
-    tcp_write_to_client(RegularClientHandle, "~~PAUSE\n", 8);
+    send_control_command("PAUSE");
 }
 
 static void save_client_handle(uv_tcp_t *client) {
@@ -100,12 +111,12 @@ static void save_client_handle(uv_tcp_t *client) {
 
     addrlen = sizeof(tmp_addr);
     uv_tcp_getpeername(client, (struct sockaddr*)&tmp_addr, &addrlen);
-
-    char *ipv4_string = inet_ntoa(tmp_addr.sin_addr);
-    printf("New connection from: %s\n", ipv4_string);
+    char addr_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(tmp_addr.sin_addr), addr_str, INET_ADDRSTRLEN);
+    dprintf(3, "New connection from: %s", addr_str);
 
     if (tmp_addr.sin_addr.s_addr == PriorityClientAddress.sin_addr.s_addr) {
-        printf("PRIORITY client\n");
+        dprintf(3, "PRIORITY client");
         if (PriorityClientHandle != NULL) {
             tcp_close((uv_handle_t *)client);
             return;
@@ -113,7 +124,7 @@ static void save_client_handle(uv_tcp_t *client) {
         PriorityClientHandle = client;
 
     } else {
-        printf("REGULAR client\n");
+        dprintf(3, "REGULAR client");
         if (RegularClientHandle != NULL) {
             tcp_close((uv_handle_t *)client);
             return;
@@ -123,7 +134,7 @@ static void save_client_handle(uv_tcp_t *client) {
     send_pause_control_command(client);
 }
 
-static void on_new_connection(uv_stream_t *ServerHandle, int status) {
+static void new_connection_cb(uv_stream_t *ServerHandle, int status) {
     uv_tcp_t *client;
 
     if (status < 0) {
@@ -144,13 +155,15 @@ static void on_new_connection(uv_stream_t *ServerHandle, int status) {
 }
 
 int tcp_bridge_init(struct config *config) {
+    ControlCmdFmt = strdup(config->control_cmd_fmt);
+
     uv_tcp_init(uv_default_loop(), &ServerHandle);
 
     uv_ip4_addr("0.0.0.0", config->tcp_port, &addr);
     PriorityClientAddress = config->priority_client;
 
     uv_tcp_bind(&ServerHandle, (const struct sockaddr*)&addr, 0);
-    int r = uv_listen((uv_stream_t*)&ServerHandle, 128, on_new_connection);
+    int r = uv_listen((uv_stream_t*)&ServerHandle, 128, new_connection_cb);
     if (r) {
         fprintf(stderr, "Listen error %s\n", uv_strerror(r));
         return -1;
@@ -159,4 +172,4 @@ int tcp_bridge_init(struct config *config) {
 }
 
 void tcp_bridge_cleanup() {
-}
+} 

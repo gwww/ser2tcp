@@ -201,7 +201,7 @@ int toml_ucs_to_utf8(int64_t code, char buf[6])
        110xxxxx 10xxxxxx
     */
     if (code <= 0x000007FF) {
-        buf[0] = 0xc0 | (code >> 6);
+        buf[0] = (char)(0xc0 | (code >> 6));
         buf[1] = 0x80 | (code & 0x3f);
         return 2;
     }
@@ -210,7 +210,7 @@ int toml_ucs_to_utf8(int64_t code, char buf[6])
        1110xxxx 10xxxxxx 10xxxxxx
     */
     if (code <= 0x0000FFFF) {
-        buf[0] = 0xe0 | (code >> 12);
+        buf[0] = (char)(0xe0 | (code >> 12));
         buf[1] = 0x80 | ((code >> 6) & 0x3f);
         buf[2] = 0x80 | (code & 0x3f);
         return 3;
@@ -220,7 +220,7 @@ int toml_ucs_to_utf8(int64_t code, char buf[6])
        11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
     */
     if (code <= 0x001FFFFF) {
-        buf[0] = 0xf0 | (code >> 18);
+        buf[0] = (char)(0xf0 | (code >> 18));
         buf[1] = 0x80 | ((code >> 12) & 0x3f);
         buf[2] = 0x80 | ((code >> 6) & 0x3f);
         buf[3] = 0x80 | (code & 0x3f);
@@ -231,7 +231,7 @@ int toml_ucs_to_utf8(int64_t code, char buf[6])
        111110xx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
     */
     if (code <= 0x03FFFFFF) {
-        buf[0] = 0xf8 | (code >> 24);
+        buf[0] = (char)(0xf8 | (code >> 24));
         buf[1] = 0x80 | ((code >> 18) & 0x3f);
         buf[2] = 0x80 | ((code >> 12) & 0x3f);
         buf[3] = 0x80 | ((code >> 6) & 0x3f);
@@ -243,7 +243,7 @@ int toml_ucs_to_utf8(int64_t code, char buf[6])
        1111110x 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
     */
     if (code <= 0x7FFFFFFF) {
-        buf[0] = 0xfc | (code >> 30);
+        buf[0] = (char)(0xfc | (code >> 30));
         buf[1] = 0x80 | ((code >> 24) & 0x3f);
         buf[2] = 0x80 | ((code >> 18) & 0x3f);
         buf[3] = 0x80 | ((code >> 12) & 0x3f);

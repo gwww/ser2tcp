@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <uv.h>
 
+#include "util.h"
+
+int DebugLevel = 0;
+
 uv_buf_t* create_uv_buf_with_data(char *buffer, int length)
 {
     uv_buf_t* iov;
@@ -14,8 +18,32 @@ uv_buf_t* create_uv_buf_with_data(char *buffer, int length)
     return iov;
 }
 
-int set_serial_attribs(int fd, int speed)
+void alloc_buffer(uv_handle_t* handle, size_t len, uv_buf_t* buf) {
+    buf->base = (char*)malloc(len);
+    buf->len = len;
+}
+
+int set_serial_attribs(serial_handle fd, int speed)
 {
+#ifdef WIN32
+    DCB dcbSerialParams = { 0 };
+    dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
+    BOOL status = GetCommState((HANDLE)fd, &dcbSerialParams);
+    dcbSerialParams.BaudRate = speed;
+    dcbSerialParams.ByteSize = 8;
+    dcbSerialParams.StopBits = ONESTOPBIT;
+    dcbSerialParams.Parity = NOPARITY;
+    SetCommState((HANDLE)fd, &dcbSerialParams);
+
+    COMMTIMEOUTS timeouts;
+    GetCommTimeouts((HANDLE)fd, &timeouts);
+    timeouts.ReadIntervalTimeout = 1;
+    timeouts.ReadTotalTimeoutMultiplier = 0;
+    timeouts.ReadTotalTimeoutConstant = 0;
+    timeouts.WriteTotalTimeoutMultiplier = 0;
+    timeouts.WriteTotalTimeoutConstant = 0;
+    SetCommTimeouts((HANDLE)fd, &timeouts);
+#else
     struct termios tty;
     int baud;
 
@@ -45,5 +73,47 @@ int set_serial_attribs(int fd, int speed)
         fprintf(stderr, "error %d from tcsetattr", errno);
         return -1;
     }
+#endif
     return 0;
+}
+
+void hex_dump(const char *prefix, const void* data, size_t size) {
+#ifdef _DEBUG
+
+
+    char ascii[17];
+    size_t i, j;
+
+    if (DebugLevel < 7)
+        return;
+
+    ascii[16] = '\0';
+    for (i = 0; i < size; ++i) {
+        if (i % 16 == 0)
+            printf("%s", prefix);
+        printf("%02X ", ((unsigned char*)data)[i]);
+        if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+            ascii[i % 16] = ((unsigned char*)data)[i];
+        }
+        else {
+            ascii[i % 16] = '.';
+        }
+        if ((i + 1) % 8 == 0 || i + 1 == size) {
+            printf(" ");
+            if ((i + 1) % 16 == 0) {
+                printf("|  %s \n", ascii);
+            }
+            else if (i + 1 == size) {
+                ascii[(i + 1) % 16] = '\0';
+                if ((i + 1) % 16 <= 8) {
+                    printf(" ");
+                }
+                for (j = (i + 1) % 16; j < 16; ++j) {
+                    printf("   ");
+                }
+                printf("|  %s \n", ascii);
+            }
+        }
+    }
+#endif // _DEBUG
 }
