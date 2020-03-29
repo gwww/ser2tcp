@@ -1,15 +1,27 @@
 [bridge]
+
 # [Required] TCP port number to listen for connections on.
 tcp-port = 7000
 
-# [Required] Serial port name. Example below is Unix name. Windows might look
-# something such as "COM1"
-serial-port = "/dev/ttys000"
+# [Required] Serial port name. Something such as "COM1:" or "/dev/tty001"
+# Use of quotes recommended.
+serial-port = "COM3:"
+
+# [Required] Baud rate of the serial port. Other port config
+# hard coded to 8 bit, no parity, 1 stop-bit
+baud-rate = 4800
 
 # [Optional] If specified a connection from this IP address will
 # pause communication with any other TCP connection (current or future).
-priority-client = "192.168.1.111"
+# Useful if a configuration client (e.g: UpStart) needs to take over the
+# use of the serial device temporarily.
+priority-client = "127.0.0.1"
 
-# [Optional] If priority client is being used then non-priority client 
+# [Optional] If priority-client is being used then the non-priority client 
 # will receive PAUSE and RESUME commands whenever a priority client is connected.
+# Configuring this allows to define the format of the messages being sent. If
+# not specified then PAUSE/RESUME messages not sent.
 control-command-format = "~~%s\r"
+
+# [Optional] Debug level 0-9, no debugging at level 0, higher is more messages
+debug-level = 6
