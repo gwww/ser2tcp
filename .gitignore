@@ -53,3 +53,16 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+# Visual Studio files
+*.sln
+*.sln.cache
+*.ncb
+*.vcproj
+*.vcproj*.user
+*.vcxproj.filters
+*.vcxproj.user
+_UpgradeReport_Files/
+UpgradeLog*.XML
+Debug
+Release
+ipch
