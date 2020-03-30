@@ -17,9 +17,9 @@ int main() {
 
     char addr_str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(config->priority_client.sin_addr), addr_str, INET_ADDRSTRLEN);
-    dprintf(1, "serial port: %s, tcp-port: %d, priority client: %s\n",
-            config->serial_port, config->tcp_port,
-            addr_str);
+    dprintf(1, "Serial port: %s, BAUD rate %d, TCP port: %d, priority client: %s",
+        config->serial_port, config->baud_rate,
+        config->tcp_port, addr_str);
 
     serial_bridge_init(config);
     tcp_bridge_init(config);
