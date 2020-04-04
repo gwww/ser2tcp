@@ -36,6 +36,13 @@
 #define TOML_EXTERN extern
 #endif
 
+#if !defined(_SSIZE_T_) && !defined(_SSIZE_T_DEFINED)
+typedef intptr_t ssize_t;
+# define SSIZE_MAX INTPTR_MAX
+# define _SSIZE_T_
+# define _SSIZE_T_DEFINED
+#endif
+
 typedef struct toml_table_t toml_table_t;
 typedef struct toml_array_t toml_array_t;
 
@@ -58,7 +65,7 @@ TOML_EXTERN toml_table_t* toml_parse(char* conf, /* NUL terminated, please. */
 TOML_EXTERN void toml_free(toml_table_t* tab);
 
 /* Retrieve the key in table at keyidx. Return 0 if out of range. */
-TOML_EXTERN const char* toml_key_in(toml_table_t* tab, int keyidx);
+TOML_EXTERN const char* toml_key_in(toml_table_t* tab, size_t keyidx);
 
 /* Lookup table by key. Return the element or 0 if not found. */
 TOML_EXTERN const char* toml_raw_in(toml_table_t* tab, const char* key);
@@ -76,27 +83,27 @@ TOML_EXTERN char toml_array_type(toml_array_t* arr);
 
 
 /* Return the number of elements in the array */
-TOML_EXTERN int toml_array_nelem(toml_array_t* arr);
+TOML_EXTERN size_t toml_array_nelem(toml_array_t* arr);
 
 /* Return the key of an array */
 TOML_EXTERN const char* toml_array_key(toml_array_t* arr);
 
 /* Return the number of key-values in a table */
-TOML_EXTERN int toml_table_nkval(toml_table_t* tab);
+TOML_EXTERN size_t toml_table_nkval(toml_table_t* tab);
 
 /* Return the number of arrays in a table */
-TOML_EXTERN int toml_table_narr(toml_table_t* tab);
+TOML_EXTERN size_t toml_table_narr(toml_table_t* tab);
 
 /* Return the number of sub-tables in a table */
-TOML_EXTERN int toml_table_ntab(toml_table_t* tab);
+TOML_EXTERN size_t toml_table_ntab(toml_table_t* tab);
 
 /* Return the key of a table*/
 TOML_EXTERN const char* toml_table_key(toml_table_t* tab);
 
 /* Deref array by index. Return the element at idx or 0 if out of range. */
-TOML_EXTERN const char* toml_raw_at(toml_array_t* arr, int idx);
-TOML_EXTERN toml_array_t* toml_array_at(toml_array_t* arr, int idx);
-TOML_EXTERN toml_table_t* toml_table_at(toml_array_t* arr, int idx);
+TOML_EXTERN const char* toml_raw_at(toml_array_t* arr, size_t idx);
+TOML_EXTERN toml_array_t* toml_array_at(toml_array_t* arr, size_t idx);
+TOML_EXTERN toml_table_t* toml_table_at(toml_array_t* arr, size_t idx);
 
 
 /* Raw to String. Caller must call free(ret) after use. 
@@ -135,7 +142,7 @@ struct toml_timestamp_t {
 TOML_EXTERN int toml_rtots(const char* s, toml_timestamp_t* ret);
 
 /* misc */
-TOML_EXTERN int toml_utf8_to_ucs(const char* orig, int len, int64_t* ret);
+TOML_EXTERN ssize_t toml_utf8_to_ucs(const char* orig, int len, int64_t* ret);
 TOML_EXTERN int toml_ucs_to_utf8(int64_t code, char buf[6]);
 TOML_EXTERN void toml_set_memutil(void* (*xxmalloc)(size_t),
                                   void    (*xxfree)(void*),
