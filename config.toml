@@ -24,4 +24,4 @@ priority-client = "127.0.0.1"
 control-command-format = "~~%s\r"
 
 # [Optional] Debug level 0-9, no debugging at level 0, higher is more messages
-debug-level = 6
+debug-level = 9
