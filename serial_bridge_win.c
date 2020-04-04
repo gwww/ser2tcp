@@ -69,7 +69,7 @@ static void serial_open(uv_timer_t *handle) {
         fprintf(stderr, "Error opening serial port: %s\n", uv_strerror(err));
         fprintf(stderr, "Retrying serial port open in %lld seconds\n", OpenRetryTime);
         uv_timer_start(&OpenTimerHandle, serial_open, OpenRetryTime * 1000, 0);
-        if (OpenRetryTime < 60) OpenRetryTime *= 2;
+        OpenRetryTime = (OpenRetryTime < 32) ? OpenRetryTime * 2 : 60;
     }
     else {
         dprintf(3, "");
