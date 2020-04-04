@@ -6,13 +6,17 @@
 
 int DebugLevel = 0;
 
-uv_buf_t* create_uv_buf_with_data(char *buffer, int length)
+uv_buf_t* create_uv_buf_with_data(char *buffer, size_t length)
 {
     uv_buf_t* iov;
 
     iov = malloc(sizeof(uv_buf_t));
+    if (NULL == iov)
+        return NULL;
     iov->base = malloc(length);
-    iov->len = length;
+    if (NULL == iov->base)
+        return NULL;
+    iov->len = (ULONG)length;
     memcpy(iov->base, buffer, length);
 
     return iov;
@@ -20,7 +24,7 @@ uv_buf_t* create_uv_buf_with_data(char *buffer, int length)
 
 void alloc_buffer(uv_handle_t* handle, size_t len, uv_buf_t* buf) {
     buf->base = (char*)malloc(len);
-    buf->len = len;
+    buf->len = (ULONG)len;
 }
 
 int set_serial_attribs(serial_handle fd, int speed)
@@ -115,5 +119,6 @@ void hex_dump(const char *prefix, const void* data, size_t size) {
             }
         }
     }
+    fflush(stdout);
 #endif // _DEBUG
 }

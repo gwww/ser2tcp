@@ -12,8 +12,9 @@ static uv_tcp_t ServerHandle;
 static uv_tcp_t *RegularClientHandle = NULL;
 static uv_tcp_t *PriorityClientHandle = NULL;
 static char* ControlCmdFmt;
+static uv_timer_t HeartbeatTimerHandle;
 
-static void tcp_write_to_client(uv_tcp_t *client, char *buffer, int length);
+static void tcp_write_to_client(uv_tcp_t *client, char *buffer, size_t length);
 
 static void tcp_close_cb(uv_handle_t* client) {
     dprintf(3, "");
@@ -22,12 +23,16 @@ static void tcp_close_cb(uv_handle_t* client) {
 
 static void send_control_command(char* command)
 {
-    char buffer[256];
+    char buffer[100];
 
-    if (ControlCmdFmt == NULL)
+    if (NULL == ControlCmdFmt || NULL == RegularClientHandle)
         return;
     snprintf(buffer, sizeof buffer, ControlCmdFmt, command);
     tcp_write_to_client(RegularClientHandle, buffer, strlen(buffer));
+}
+
+static void heartbeat_cb(uv_timer_t* handle) {
+    send_control_command("HEARTBEAT");
 }
 
 static void tcp_close(uv_handle_t* client) {
@@ -51,13 +56,12 @@ static void tcp_write_cb(uv_write_t *req, int status) {
         tcp_close((uv_handle_t*)req->handle);
     }
 
-    uv_buf_t *buf = (uv_buf_t *)req->data;
-    free(buf->base);
-    free(buf);
+    free(((uv_buf_t*)req->data)->base);
+    free(req->data);
     free(req);
 }
 
-static void tcp_write_to_client(uv_tcp_t *client, char *buffer, int length) {
+static void tcp_write_to_client(uv_tcp_t *client, char *buffer, size_t length) {
     if (client == NULL)
         return;
 
@@ -67,11 +71,16 @@ static void tcp_write_to_client(uv_tcp_t *client, char *buffer, int length) {
     uv_write_t *req = (uv_write_t *) malloc(sizeof(uv_write_t));
     if (req) {
         req->data = (void *)create_uv_buf_with_data(buffer, length);
+        if (NULL == req->data) {
+            free(req);
+            fprintf(stderr, "Out of memory, in tcp_write\n");
+            return;
+        }
         uv_write(req, (uv_stream_t *)client, req->data, 1, tcp_write_cb);
     }
 }
 
-void tcp_write(char *buffer, int length) {
+void tcp_write(char *buffer, size_t length) {
     uv_stream_t* sendto;
 
     dprintf(3, "");
@@ -85,7 +94,7 @@ static void tcp_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
     dprintf(3, "");
     if (nread < 0) {
         if (nread != UV_EOF)
-            fprintf(stderr, "TCP read error %s\n", uv_err_name(nread));
+            fprintf(stderr, "TCP read error %s\n", uv_err_name((int)nread));
         tcp_close((uv_handle_t *)client);
     } else if (nread > 0) {
         /* if (*(buf->base) == '~') exit(0); */
@@ -99,12 +108,6 @@ static void tcp_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
     if (buf->base) free(buf->base);
 }
 
-static void send_pause_control_command(uv_tcp_t *client) {
-    if (NULL == PriorityClientHandle)
-        return;
-    send_control_command("PAUSE");
-}
-
 static void save_client_handle(uv_tcp_t *client) {
     struct sockaddr_in tmp_addr;
     int addrlen;
@@ -113,10 +116,10 @@ static void save_client_handle(uv_tcp_t *client) {
     uv_tcp_getpeername(client, (struct sockaddr*)&tmp_addr, &addrlen);
     char addr_str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(tmp_addr.sin_addr), addr_str, INET_ADDRSTRLEN);
-    dprintf(3, "New connection from: %s", addr_str);
+    dprintf(1, "New connection from: %s", addr_str);
 
     if (tmp_addr.sin_addr.s_addr == PriorityClientAddress.sin_addr.s_addr) {
-        dprintf(3, "PRIORITY client");
+        dprintf(1, "PRIORITY client");
         if (PriorityClientHandle != NULL) {
             tcp_close((uv_handle_t *)client);
             return;
@@ -124,14 +127,16 @@ static void save_client_handle(uv_tcp_t *client) {
         PriorityClientHandle = client;
 
     } else {
-        dprintf(3, "REGULAR client");
+        dprintf(1, "REGULAR client");
         if (RegularClientHandle != NULL) {
             tcp_close((uv_handle_t *)client);
             return;
         }
         RegularClientHandle = client;
+        send_control_command("HEARTBEAT");
+
     }
-    send_pause_control_command(client);
+    if (PriorityClientHandle) send_control_command("PAUSE");
 }
 
 static void new_connection_cb(uv_stream_t *ServerHandle, int status) {
@@ -158,6 +163,9 @@ int tcp_bridge_init(struct config *config) {
     ControlCmdFmt = strdup(config->control_cmd_fmt);
 
     uv_tcp_init(uv_default_loop(), &ServerHandle);
+
+    uv_timer_init(uv_default_loop(), &HeartbeatTimerHandle);
+    uv_timer_start(&HeartbeatTimerHandle, heartbeat_cb, 60*1000, 60*1000);
 
     uv_ip4_addr("0.0.0.0", config->tcp_port, &addr);
     PriorityClientAddress = config->priority_client;

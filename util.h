@@ -1,4 +1,4 @@
-extern uv_buf_t* create_uv_buf_with_data(char *, int);
+extern uv_buf_t* create_uv_buf_with_data(char *, size_t);
 void alloc_buffer(uv_handle_t*, size_t, uv_buf_t*);
 
 #ifdef WIN32
@@ -17,6 +17,7 @@ extern int DebugLevel;
     printf("[%s:%d] ", __func__, __LINE__);     \
     printf(__VA_ARGS__);                        \
     printf("\n");                               \
+    fflush(stdout);                             \
   } while(0);                                   \
 }
 #else

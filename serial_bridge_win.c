@@ -1,6 +1,4 @@
-#include <assert.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <uv.h>
 #include <fcntl.h>
 
@@ -29,30 +27,33 @@ static void serial_write_complete(uv_write_t *req, int status) {
     if (status) {
         fprintf(stderr, "Serial write error: %s\n", uv_strerror(status));
         serial_close((uv_handle_t *)req);
-        return;
     }
+
     free(((uv_buf_t*)req->data)->base);
     free(req->data);
     free(req);
 }
 
-void serial_write(char *buffer, int length) {
+void serial_write(char *buffer, size_t length) {
     if (SerialDevice.handle == NULL)
         return;
-    //printf("serial_write '%.*s' (%d bytes)\n", length-1, buffer, length);
     hex_dump("SerTx:   ", buffer, length);
     uv_write_t* req = (uv_write_t*)malloc(sizeof(uv_write_t));
     if (req) {
         req->data = (void*)create_uv_buf_with_data(buffer, length);
+        if (NULL == req->data) {
+            free(req);
+            fprintf(stderr, "Out of memory, in serial_write\n");
+            return;
+        }
         uv_write(req, (uv_stream_t *)&SerialDevice, req->data, 1, serial_write_complete);
     }
 }
 
 static void serial_read_cb(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
-    //printf("serial_read_cb (%d bytes)\n", nread);
     if (nread < 0) {
         if (nread != UV_EOF)
-            fprintf(stderr, "Serial read error %s\n", uv_err_name(nread));
+            fprintf(stderr, "Serial read error %s\n", uv_err_name((int)nread));
         serial_close((uv_handle_t*)client);
     } else if (nread > 0) {
         hex_dump("SerRx: ", buf->base, nread);
