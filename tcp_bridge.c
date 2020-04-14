@@ -16,11 +16,6 @@ static uv_timer_t HeartbeatTimerHandle;
 
 static void tcp_write_to_client(uv_tcp_t *client, char *buffer, size_t length);
 
-static void tcp_close_cb(uv_handle_t* client) {
-    dprintf(3, "");
-    free(client);
-}
-
 static void send_control_command(char* command)
 {
     char buffer[100];
@@ -33,6 +28,11 @@ static void send_control_command(char* command)
 
 static void heartbeat_cb(uv_timer_t* handle) {
     send_control_command("HEARTBEAT");
+}
+
+static void tcp_close_cb(uv_handle_t* client) {
+    dprintf(3, "");
+    free(client);
 }
 
 static void tcp_close(uv_handle_t* client) {
@@ -108,7 +108,7 @@ static void tcp_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
     if (buf->base) free(buf->base);
 }
 
-static void save_client_handle(uv_tcp_t *client) {
+static int save_client_handle(uv_tcp_t *client) {
     struct sockaddr_in tmp_addr;
     int addrlen;
 
@@ -122,7 +122,7 @@ static void save_client_handle(uv_tcp_t *client) {
         dprintf(1, "PRIORITY client");
         if (PriorityClientHandle != NULL) {
             tcp_close((uv_handle_t *)client);
-            return;
+            return -1;
         }
         PriorityClientHandle = client;
 
@@ -130,13 +130,14 @@ static void save_client_handle(uv_tcp_t *client) {
         dprintf(1, "REGULAR client");
         if (RegularClientHandle != NULL) {
             tcp_close((uv_handle_t *)client);
-            return;
+            return -1;
         }
         RegularClientHandle = client;
         send_control_command("HEARTBEAT");
 
     }
     if (PriorityClientHandle) send_control_command("PAUSE");
+    return 0;
 }
 
 static void new_connection_cb(uv_stream_t *ServerHandle, int status) {
@@ -155,8 +156,8 @@ static void new_connection_cb(uv_stream_t *ServerHandle, int status) {
         return;
     }
 
-    save_client_handle(client);
-    uv_read_start((uv_stream_t*)client, alloc_buffer, tcp_read_cb);
+    if (save_client_handle(client) == 0)
+        uv_read_start((uv_stream_t*)client, alloc_buffer, tcp_read_cb);
 }
 
 int tcp_bridge_init(struct config *config) {
