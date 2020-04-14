@@ -1,5 +1,5 @@
 nssm install ser2tcp "C:\Program Files\Serial to TCP\ser2tcp.exe"
-REM nssm set ser2tcp AppDirectory """C:\Program Files\Serial to TCP\"""
+REM nssm set ser2tcp AppDirectory "C:\Program Files\Serial to TCP\"
 nssm set ser2tcp AppParameters "config.toml"
 nssm set ser2tcp DisplayName "Serial to TCP Bridge"
 nssm set ser2tcp Description "Service to bridge serial traffic to a TCP connected client"
