@@ -40,6 +40,9 @@
   <ItemGroup>
     <Library Include="..\libuv\Debug\lib\libuv.lib" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="install.bat" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <ProjectGuid>{7C919327-2606-43B6-A00C-833BF18D9B83}</ProjectGuid>
