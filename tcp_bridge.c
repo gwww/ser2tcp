@@ -3,6 +3,7 @@
 #include <uv.h>
 
 #include "serial_bridge.h"
+#include "tcp_bridge.h"
 #include "config.h"
 #include "util.h"
 
@@ -16,18 +17,18 @@ static uv_timer_t HeartbeatTimerHandle;
 
 static void tcp_write_to_client(uv_tcp_t *client, char *buffer, size_t length);
 
-static void send_control_command(char* command)
-{
-    char buffer[100];
+void tcp_send_control_command(char* command, char *data, uv_tcp_t* client) {
+    char buffer[200];
 
     if (NULL == ControlCmdFmt || NULL == RegularClientHandle)
         return;
-    snprintf(buffer, sizeof buffer, ControlCmdFmt, command);
-    tcp_write_to_client(RegularClientHandle, buffer, strlen(buffer));
+    snprintf(buffer, sizeof buffer - 100, ControlCmdFmt, command, 
+        data ? " " : "", data ? data : "");
+    tcp_write_to_client(client ? client : RegularClientHandle, buffer, strlen(buffer));
 }
 
 static void heartbeat_cb(uv_timer_t* handle) {
-    send_control_command("HEARTBEAT");
+    tcp_send_control_command(TCP_CONTROL_COMMAND_HEARTBEAT, NULL, NULL);
 }
 
 static void tcp_close_cb(uv_handle_t* client) {
@@ -41,13 +42,32 @@ static void tcp_close(uv_handle_t* client) {
     if (client == (uv_handle_t *)PriorityClientHandle) {
         dprintf(3, "PRIORITY client");
         PriorityClientHandle = NULL;
-        send_control_command("RESUME");
+        tcp_send_control_command(TCP_CONTROL_COMMAND_RESUME, NULL, NULL);
     } else if (client == (uv_handle_t *)RegularClientHandle) {
         dprintf(3, "REGULAR client");
         RegularClientHandle = NULL;
     } else {
         dprintf(3, "UNKNOWN client");
     }
+}
+
+static void delayed_tcp_close_callback(uv_timer_t* timer) {
+    dprintf(3, "");
+    tcp_close(timer->data);
+    free(timer);
+}
+
+static void delayed_tcp_close(uv_handle_t* client) {
+    uv_timer_t *timer;
+
+    dprintf(3, "");
+    timer = malloc(sizeof(uv_timer_t));
+    if (NULL == timer)
+        return;
+
+    uv_timer_init(uv_default_loop(), timer);
+    timer->data = client;
+    uv_timer_start(timer, delayed_tcp_close_callback, 5000, 0);
 }
 
 static void tcp_write_cb(uv_write_t *req, int status) {
@@ -121,7 +141,8 @@ static int save_client_handle(uv_tcp_t *client) {
     if (tmp_addr.sin_addr.s_addr == PriorityClientAddress.sin_addr.s_addr) {
         dprintf(1, "PRIORITY client");
         if (PriorityClientHandle != NULL) {
-            tcp_close((uv_handle_t *)client);
+            tcp_send_control_command(TCP_CONTROL_COMMAND_ANOTHER_TCP_CLIENT_CONNECTED, NULL, client);
+            delayed_tcp_close((uv_handle_t *)client);
             return -1;
         }
         PriorityClientHandle = client;
@@ -129,14 +150,15 @@ static int save_client_handle(uv_tcp_t *client) {
     } else {
         dprintf(1, "REGULAR client");
         if (RegularClientHandle != NULL) {
-            tcp_close((uv_handle_t *)client);
+            tcp_send_control_command(TCP_CONTROL_COMMAND_ANOTHER_TCP_CLIENT_CONNECTED, NULL, client);
+            delayed_tcp_close((uv_handle_t *)client);
             return -1;
         }
         RegularClientHandle = client;
-        send_control_command("HEARTBEAT");
+        tcp_send_control_command(TCP_CONTROL_COMMAND_HEARTBEAT, NULL, NULL);
 
     }
-    if (PriorityClientHandle) send_control_command("PAUSE");
+    if (PriorityClientHandle) tcp_send_control_command(TCP_CONTROL_COMMAND_PAUSE, NULL, NULL);
     return 0;
 }
 
@@ -161,7 +183,7 @@ static void new_connection_cb(uv_stream_t *ServerHandle, int status) {
 }
 
 int tcp_bridge_init(struct config *config) {
-    ControlCmdFmt = strdup(config->control_cmd_fmt);
+    ControlCmdFmt = setup_control_string(config->control_cmd_fmt);
 
     uv_tcp_init(uv_default_loop(), &ServerHandle);
 

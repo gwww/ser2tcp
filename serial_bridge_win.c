@@ -66,7 +66,12 @@ static void serial_open(uv_timer_t *handle) {
     memset(&SerialDevice, 0, sizeof(SerialDevice));
     int err = uv_device_init(uv_default_loop(), &SerialDevice, SerialPortName, O_RDWR);
     if (err) {
-        fprintf(stderr, "Error opening serial port: %s\n", uv_strerror(err));
+        char buffer[200];
+
+        snprintf(buffer, sizeof buffer, "Error opening serial port: %s", uv_strerror(err));
+        tcp_send_control_command(TCP_CONTROL_COMMAND_SERIAL_DISCONNECTED, buffer, NULL);
+        fprintf(stderr, "%s\n", buffer);
+
         fprintf(stderr, "Retrying serial port open in %lld seconds\n", OpenRetryTime);
         uv_timer_start(&OpenTimerHandle, serial_open, OpenRetryTime * 1000, 0);
         OpenRetryTime = (OpenRetryTime < 32) ? OpenRetryTime * 2 : 60;
@@ -76,6 +81,7 @@ static void serial_open(uv_timer_t *handle) {
         OpenRetryTime = 1;
         set_serial_attribs(SerialDevice.handle, SerialPortBaudRate);
         err = uv_read_start((uv_stream_t*)&SerialDevice, alloc_buffer, serial_read_cb);
+        tcp_send_control_command(TCP_CONTROL_COMMAND_SERIAL_CONNECTED, NULL, NULL);
     }
 }
 

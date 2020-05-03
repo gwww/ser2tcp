@@ -8,6 +8,7 @@ typedef int serial_handle;
 #endif
 extern int set_serial_attribs(serial_handle, int);
 extern void hex_dump(const char* prefix, const void* data, size_t size);
+extern char* setup_control_string(char* str);
 
 extern int DebugLevel;
 

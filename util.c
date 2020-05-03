@@ -51,29 +51,29 @@ int set_serial_attribs(serial_handle fd, int speed)
     struct termios tty;
     int baud;
 
-    if (tcgetattr (fd, &tty) != 0) {
+    if (tcgetattr(fd, &tty) != 0) {
         fprintf(stderr, "error %d from tcgetattr", errno);
         return -1;
     }
 
     switch (speed) {
-        case 4800:   baud = B4800;   break;
-        case 9600:   baud = B9600;   break;
-        case 19200:  baud = B19200;  break;
-        case 38400:  baud = B38400;  break;
-        case 115200: baud = B115200; break;
-        default:
-            fprintf(stderr, "warning: baud rate %u not supported, using 9600.\n",
-              speed);
-            baud = B9600;
-            break;
+    case 4800:   baud = B4800;   break;
+    case 9600:   baud = B9600;   break;
+    case 19200:  baud = B19200;  break;
+    case 38400:  baud = B38400;  break;
+    case 115200: baud = B115200; break;
+    default:
+        fprintf(stderr, "warning: baud rate %u not supported, using 9600.\n",
+            speed);
+        baud = B9600;
+        break;
     }
 
     cfsetospeed(&tty, baud);
     cfsetispeed(&tty, baud);
     tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;     // 8-bit chars
 
-    if (tcsetattr (fd, TCSANOW, &tty) != 0) {
+    if (tcsetattr(fd, TCSANOW, &tty) != 0) {
         fprintf(stderr, "error %d from tcsetattr", errno);
         return -1;
     }
@@ -81,7 +81,7 @@ int set_serial_attribs(serial_handle fd, int speed)
     return 0;
 }
 
-void hex_dump(const char *prefix, const void* data, size_t size) {
+void hex_dump(const char* prefix, const void* data, size_t size) {
 #ifdef _DEBUG
 
 
@@ -121,4 +121,33 @@ void hex_dump(const char *prefix, const void* data, size_t size) {
     }
     fflush(stdout);
 #endif // _DEBUG
+}
+
+char* setup_control_string(char* str) {
+    size_t i = 0;
+    char* s = str;
+    int found = FALSE;
+    
+    if (NULL == s || '\0' == *s)
+        return NULL;
+
+    while (*s) {
+        if (*s == '%' && *(s + 1) == 's') {
+            found = TRUE;
+            break;
+        }
+        s++;
+        i++;
+    }
+
+    if (!found)
+        return NULL;
+
+    char* ret = malloc(strlen(str) + 4);
+    strncpy(ret, str, i);
+    ret[i] = '\0';
+    strcat(ret, "%s%s");
+    strcat(ret, str + i);
+
+    return ret;
 }

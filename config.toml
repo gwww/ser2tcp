@@ -13,15 +13,29 @@ baud-rate = 4800
 
 # [Optional] If specified a connection from this IP address will
 # pause communication with any other TCP connection (current or future).
-# Useful if a configuration client (e.g: UpStart) needs to take over the
+# Useful if a configuration client (e.g: UPStart) needs to take over the
 # use of the serial device temporarily.
 priority-client = "127.0.0.1"
 
 # [Optional] If priority-client is being used then the non-priority client 
-# will receive PAUSE and RESUME commands whenever a priority client is connected.
+# will receive control messages whenever a priority client is connected.
 # Configuring this allows to define the format of the messages being sent. If
-# not specified then PAUSE/RESUME messages not sent.
+# not specified then control messages are not sent. This string is ignored
+# unless one '%s' is found within the string. It must not contain 
+# any other printf control sequences. The '%s' is substituted with one of
+# the control messages below. Only non-priority clients are sent control messages.
+#
+# Control messages:
+# PAUSE -- sent when a priority client connects, thus traffic is paused to regular client
+# RESUME -- sent when a priority client disconnects
+# HEARTBEAT -- sent every 60 seconds to indicate TCP connection has not dropped
+# SERIAL_DISCONNECTED -- sent when the serial port cannot be opened, the error message
+#     from opening the serial port follows the SERIAL_DISCONNECTED
+# SERIAL_CONNECTED -- sent when the serial port is opened
+# TCP_OTHER_CLIENT_IS_CONNECTED -- sent when an attempt to connect is made and
+#     another client is connected
+#
 control-command-format = "~~%s\r"
 
 # [Optional] Debug level 0-9, no debugging at level 0, higher is more messages
-debug-level = 9
+debug-level = 6
